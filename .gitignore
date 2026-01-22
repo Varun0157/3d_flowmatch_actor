@@ -24,6 +24,7 @@ diffusion_taskABC_D-C192-B30-lr3e-4-DI1-20-Phistory_selfattn_epsilon_instrcond-H
 *.pt
 *.log
 !fig/*
+Peract2_zarr/
 
 # train/test directory
 train_logs/

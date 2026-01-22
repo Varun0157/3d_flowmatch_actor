@@ -10,7 +10,7 @@ from torch import nn
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel
-from torch.utils.tensorboard import SummaryWriter
+import wandb
 from tqdm import trange, tqdm
 
 from modeling.encoder.text import fetch_tokenizers
@@ -39,7 +39,12 @@ class BaseTrainTester:
         )
 
         if dist.get_rank() == 0 and not self.args.eval_only:
-            self.writer = SummaryWriter(log_dir=args.log_dir)
+            wandb.init(
+                project="3d-flowmatch-actor",
+                name=f"{args.exp_log_dir}/{args.run_log_dir}",
+                config=vars(args),
+                dir=args.log_dir
+            )
 
     def get_datasets(self):
         """Initialize datasets."""
@@ -410,8 +415,7 @@ class BaseTrainTester:
         values = {k: v.mean().item() for k, v in values.items()}
         if dist.get_rank() == 0:
             if step_id > -1:
-                for key, val in values.items():
-                    self.writer.add_scalar(key, val, step_id)
+                wandb.log(values, step=step_id)
 
             # Also log to terminal
             print(f"Step {step_id}:")
