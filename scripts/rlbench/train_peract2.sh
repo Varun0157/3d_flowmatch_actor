@@ -9,8 +9,8 @@ val_instructions=instructions/peract2/instructions.json
 
 dataset=Peract2_3dfront_3dwrist
 num_workers=4
-B=64  # we used 64 but you can use as low as 16 without much performance drop - it's much faster
-B_val=64
+B=16  # we used 64 but you can use as low as 16 without much performance drop - it's much faster
+B_val=16
 chunk_size=1
 memory_limit=8  # this means 8GB CPU RAM per worker per GPU,
 # but it will never reach that, because these datasets are small
