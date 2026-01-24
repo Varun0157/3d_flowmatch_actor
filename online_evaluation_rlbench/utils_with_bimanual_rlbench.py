@@ -56,7 +56,7 @@ class Mover:
             # Peract2 takes (right, left) action, but we predict (left, right)
             action_collision = action_collision[::-1]
             action_collision = action_collision.ravel()
-            obs, reward, terminate = self._task.step(action_collision, ret_obs=True)
+            obs, reward, terminate = self._task.step(action_collision)
 
             # Check if we reached the desired pose (planner may be inaccurate)
             l_pos = obs.left.gripper_pose[:3]
@@ -225,10 +225,14 @@ class RLBenchEnv:
 
         self.env.shutdown()
 
-        var_success_rates["mean"] = (
-            sum(var_success_rates.values()) /
-            sum(var_num_valid_demos.values())
-        )
+        total_valid = sum(var_num_valid_demos.values())
+        if total_valid > 0:
+            var_success_rates["mean"] = (
+                sum(var_success_rates.values()) / total_valid
+            )
+        else:
+            var_success_rates["mean"] = 0.0
+            print("Warning: No valid demos completed for this task")
 
         return var_success_rates
 
@@ -255,10 +259,16 @@ class RLBenchEnv:
             from_episode_number=0
         )
 
+        num_valid_demos = 0
         for demo_id, demo in enumerate(var_demos):
 
             grippers = torch.Tensor([]).cuda(non_blocking=True)
-            descriptions, obs = task.reset_to_demo(demo)
+            try:
+                descriptions, obs = task.reset_to_demo(demo)
+            except RuntimeError as e:
+                print(f"Skipping demo {demo_id} due to reset error: {e}")
+                continue
+            num_valid_demos += 1
             actioner.load_episode(descriptions)
 
             move = Mover(task, max_tries=max_tries)
@@ -325,9 +335,9 @@ class RLBenchEnv:
             )
 
         # Compensate for failed demos
-        valid = len(var_demos) > 0
+        valid = num_valid_demos > 0
 
-        return success_rate, valid, len(var_demos)
+        return success_rate, valid, num_valid_demos
 
     def create_obs_config(
         self, image_size, apply_rgb, apply_depth, apply_pc, apply_cameras, **kwargs

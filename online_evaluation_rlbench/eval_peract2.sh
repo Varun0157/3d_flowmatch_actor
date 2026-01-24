@@ -17,18 +17,17 @@ tasks=(
 
 
 # Testing arguments
-checkpoint=peract2.pth
-checkpoint_alias=my_awesome_peract2_model  # or something ugly
-# like: denoise3d-Peract2_3dfront_3dwrist-C120-B64-lr1e-4-constant-H3-rectified_flow
+checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow/best.pth
+checkpoint_alias=denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow
 
 max_tries=2
 max_steps=25
-headless=true
+headless=false
 collision_checking=false
 seed=0
 
 # Dataset arguments
-data_dir=/data/group_data/katefgroup/VLA/peract2_raw_squash/test/
+data_dir=peract2_test/
 dataset=Peract2_3dfront_3dwrist
 image_size=256,256
 
@@ -53,7 +52,7 @@ denoise_model=rectified_flow
 
 num_ckpts=${#tasks[@]}
 for ((i=0; i<$num_ckpts; i++)); do
-    xvfb-run -a python online_evaluation_rlbench/evaluate_policy.py \
+    python online_evaluation_rlbench/evaluate_policy.py \
         --checkpoint $checkpoint \
         --task ${tasks[$i]} \
         --max_tries $max_tries \
