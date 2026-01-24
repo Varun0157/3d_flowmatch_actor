@@ -3,7 +3,7 @@ from torch import nn
 
 from ...utils.layers import AttentionModule
 from ..vision import fetch_visual_encoders
-from ..text import fetch_text_encoders
+# from ..text import fetch_text_encoders
 
 
 class Encoder(nn.Module):
@@ -21,12 +21,12 @@ class Encoder(nn.Module):
         self.subsampling_factor = fps_subsampling_factor
         self._backbone_name = backbone
 
-        # Instruction encoder
-        self.text_encoder, _dim = fetch_text_encoders(backbone)
-        if self.text_encoder is not None:  # is None when using a VLM
-            for p in self.text_encoder.parameters():
-                p.requires_grad = finetune_text_encoder
-            self.instruction_encoder = nn.Linear(_dim, embedding_dim)
+        # # Instruction encoder
+        # self.text_encoder, _dim = fetch_text_encoders(backbone)
+        # if self.text_encoder is not None:  # is None when using a VLM
+        #     for p in self.text_encoder.parameters():
+        #         p.requires_grad = finetune_text_encoder
+        #     self.instruction_encoder = nn.Linear(_dim, embedding_dim)
 
         # Scene encoder
         self.backbone, self.normalize = fetch_visual_encoders(backbone)

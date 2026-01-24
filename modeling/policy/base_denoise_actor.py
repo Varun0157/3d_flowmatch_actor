@@ -75,7 +75,7 @@ class DenoiseActor(nn.Module):
 
     def encode_inputs(self, rgb3d, rgb2d, pcd, instruction, proprio):
         fixed_inputs = self.encoder(
-            rgb3d, rgb2d, pcd, instruction,
+            rgb3d, rgb2d, pcd, None,  # instruction ignored, using learnable task embedding
             proprio.flatten(1, 2)
         )
         # Query trajectory (for relative trajectory prediction)

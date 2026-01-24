@@ -56,6 +56,9 @@ class Encoder(BaseEncoder):
         self.camera_ids = nn.Embedding(2, embedding_dim)
         self.pos_embed_2d = SinusoidalPosEmb(embedding_dim)
 
+        # Learnable task embedding (replaces language encoding for single-task)
+        self.task_embedding = nn.Parameter(torch.randn(1, 8, embedding_dim))
+
     def encode_proprio(self, proprio, context_feats, context_pos):
         """
         Compute proprioception features.
@@ -85,7 +88,7 @@ class Encoder(BaseEncoder):
 
         return proprio_feats
 
-    def encode_clip(self, rgb3d, rgb2d, pcd, text):
+    def encode_clip(self, rgb3d, rgb2d, pcd, text=None):
         """
         Compute visual features/pos embeddings.
 
@@ -93,7 +96,7 @@ class Encoder(BaseEncoder):
             - rgb3d: (B, ncam3d, 3, H, W), rgb obs of 3D cameras
             - rgb2d: (B, ncam2d, 3, H, W), rgb obs of 2D cameras
             - pcd: (B, ncam3d, 3, H, W)
-            - text: [str] of len=B, text instruction
+            - text: [str] of len=B, text instruction (ignored, using learnable embedding)
 
         Returns:
             - rgb3d_feats: (B, Np, F)
@@ -101,9 +104,11 @@ class Encoder(BaseEncoder):
             - pcd: (B, Np, 3)
             - instr_feats: (B, L, F)
         """
-        # Encode language
-        instruction = self.text_encoder(text)
-        instr_feats = self.instruction_encoder(instruction)
+        # Use learnable task embedding instead of language encoding
+        if text is not None:
+            print("Warning: text instruction provided but will be ignored - using learnable task embedding")
+        batch_size = rgb3d.shape[0]
+        instr_feats = self.task_embedding.expand(batch_size, -1, -1)
 
         # 3D camera features
         num_cameras = rgb3d.shape[1]
