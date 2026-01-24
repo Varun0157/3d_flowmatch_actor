@@ -1,24 +1,12 @@
 exp=peract2
 tasks=(
     bimanual_push_box
-    bimanual_lift_ball
-    bimanual_dual_push_buttons
-    bimanual_pick_plate
-    bimanual_put_item_in_drawer
-    bimanual_put_bottle_in_fridge
-    bimanual_handover_item
-    bimanual_pick_laptop
-    bimanual_straighten_rope
-    bimanual_sweep_to_dustpan
-    bimanual_lift_tray
-    bimanual_handover_item_easy
-    bimanual_take_tray_out_of_oven
 )
 
 
 # Testing arguments
-checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow/best.pth
-checkpoint_alias=denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow
+checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow-pushbox/best.pth
+checkpoint_alias=denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow-pushbox
 
 max_tries=2
 max_steps=25
@@ -27,7 +15,7 @@ collision_checking=false
 seed=0
 
 # Dataset arguments
-data_dir=peract2_test/
+data_dir=bimanual_push_box/peract2_test/
 dataset=Peract2_3dfront_3dwrist
 image_size=256,256
 
