@@ -313,7 +313,7 @@ class RLBenchEnv:
                         success_rate += 1
                         break
 
-                except (IKError, ConfigurationPathError, InvalidActionError) as e:
+                except (IKError, ConfigurationPathError, InvalidActionError, RuntimeError) as e:
                     print(task_str, demo, step_id, success_rate, e)
                     reward = 0
 
