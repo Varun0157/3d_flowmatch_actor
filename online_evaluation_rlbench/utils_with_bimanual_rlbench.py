@@ -139,12 +139,14 @@ class RLBenchEnv:
         apply_pc=False,
         headless=False,
         apply_cameras=("over_shoulder_left", "over_shoulder_right", "wrist_left", "wrist_right", "front"),
-        collision_checking=False
+        collision_checking=False,
+        trajectory_save_dir=None
     ):
 
         # setup required inputs
         self.data_path = data_path
         self.apply_cameras = apply_cameras
+        self.trajectory_save_dir = trajectory_save_dir
 
         # setup RLBench environments
         self.obs_config = self.create_obs_config(
@@ -260,6 +262,9 @@ class RLBenchEnv:
         )
 
         num_valid_demos = 0
+        failed_reset_episodes = []
+        episode_results = []
+
         for demo_id, demo in enumerate(var_demos):
 
             grippers = torch.Tensor([]).cuda(non_blocking=True)
@@ -267,12 +272,27 @@ class RLBenchEnv:
                 descriptions, obs = task.reset_to_demo(demo)
             except RuntimeError as e:
                 print(f"Skipping demo {demo_id} due to reset error: {e}")
+                failed_reset_episodes.append(demo_id)
                 continue
             num_valid_demos += 1
             actioner.load_episode(descriptions)
 
             move = Mover(task, max_tries=max_tries)
             max_reward = 0.0
+
+            # Extract ground truth trajectory from demo
+            gt_left_traj = np.array([o.left.gripper_pose for o in demo])
+            gt_right_traj = np.array([o.right.gripper_pose for o in demo])
+
+            # Collect predicted and executed trajectories
+            pred_left_traj = []
+            pred_right_traj = []
+            exec_left_traj = []
+            exec_right_traj = []
+
+            # Record initial position
+            exec_left_traj.append(np.concatenate([obs.left.gripper_pose, [obs.left.gripper_open]]))
+            exec_right_traj.append(np.concatenate([obs.right.gripper_pose, [obs.right.gripper_open]]))
 
             for step_id in range(max_steps):
 
@@ -303,9 +323,16 @@ class RLBenchEnv:
                     actions = output[-1].cpu().numpy()
                     actions[..., -1] = actions[..., -1].round()
 
+                    # Store predicted trajectory (left arm: actions[:, 0], right arm: actions[:, 1])
+                    pred_left_traj.append(actions[:, 0])
+                    pred_right_traj.append(actions[:, 1])
+
                     # execute
                     for action in actions:
                         obs, reward, _ = move(action, collision_checking=False)
+                        # Record executed position after each action
+                        exec_left_traj.append(np.concatenate([obs.left.gripper_pose, [obs.left.gripper_open]]))
+                        exec_right_traj.append(np.concatenate([obs.right.gripper_pose, [obs.right.gripper_open]]))
 
                     max_reward = max(max_reward, reward)
 
@@ -318,6 +345,42 @@ class RLBenchEnv:
                     reward = 0
 
             total_reward += max_reward
+
+            # Save trajectories if save directory is specified
+            if self.trajectory_save_dir is not None:
+                save_dir = os.path.join(
+                    self.trajectory_save_dir, task_str, f"variation{variation}"
+                )
+                os.makedirs(save_dir, exist_ok=True)
+                save_path = os.path.join(save_dir, f"episode{demo_id}_trajectories.npz")
+
+                # Concatenate predicted trajectories across steps
+                if pred_left_traj:
+                    pred_left = np.concatenate(pred_left_traj, axis=0)
+                    pred_right = np.concatenate(pred_right_traj, axis=0)
+                else:
+                    pred_left = np.array([])
+                    pred_right = np.array([])
+
+                np.savez(
+                    save_path,
+                    gt_left=gt_left_traj,
+                    gt_right=gt_right_traj,
+                    pred_left=pred_left,
+                    pred_right=pred_right,
+                    exec_left=np.array(exec_left_traj),
+                    exec_right=np.array(exec_right_traj),
+                    success=reward == 1,
+                    max_reward=max_reward
+                )
+                print(f"Saved trajectories to {save_path}")
+
+            # Track episode result
+            episode_results.append({
+                'episode_id': demo_id,
+                'success': reward == 1,
+                'max_reward': float(max_reward)
+            })
 
             print(
                 task_str,
@@ -333,6 +396,34 @@ class RLBenchEnv:
                 f"SR: {total_reward:.2f}/{demo_id+1}",
                 "# valid demos", demo_id + 1
             )
+
+        # Save summary with failed episodes if trajectory saving is enabled
+        if self.trajectory_save_dir is not None:
+            import json
+            save_dir = os.path.join(
+                self.trajectory_save_dir, task_str, f"variation{variation}"
+            )
+            os.makedirs(save_dir, exist_ok=True)
+            summary_path = os.path.join(save_dir, "summary.json")
+
+            failed_episodes = [r['episode_id'] for r in episode_results if not r['success']]
+            success_episodes = [r['episode_id'] for r in episode_results if r['success']]
+
+            summary = {
+                'task': task_str,
+                'variation': variation,
+                'total_demos': len(var_demos),
+                'valid_demos': num_valid_demos,
+                'success_count': success_rate,
+                'success_rate': success_rate / num_valid_demos if num_valid_demos > 0 else 0,
+                'failed_reset_episodes': failed_reset_episodes,
+                'failed_episodes': failed_episodes,
+                'success_episodes': success_episodes,
+                'episode_results': episode_results
+            }
+            with open(summary_path, 'w') as f:
+                json.dump(summary, f, indent=2)
+            print(f"Saved summary to {summary_path}")
 
         # Compensate for failed demos
         valid = num_valid_demos > 0

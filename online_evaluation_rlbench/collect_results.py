@@ -15,6 +15,7 @@ FOLDER = args.folder
 
 sum_ = 0
 tasks = sorted(os.listdir(FOLDER))
+tasks = [t for t in tasks if t != 'trajectories']  # skip trajectory save folder
 results = []
 for folder in tasks:
     with open(f'{FOLDER}/{folder}/eval.json') as fid:
