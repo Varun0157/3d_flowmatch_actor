@@ -32,6 +32,7 @@ def parse_arguments():
         ('image_size', str, "256,256"),
         # Logging arguments
         ('output_file', Path, Path(__file__).parent / "eval.json"),
+        ('trajectory_save_dir', str_none, None),
         # Model arguments: general policy type
         ('model_type', str, 'denoise3d'),
         ('bimanual', str2bool, False),
@@ -133,7 +134,8 @@ if __name__ == "__main__":
             apply_pc=True,
             headless=bool(args.headless),
             apply_cameras=dataset_class.cameras,
-            collision_checking=bool(args.collision_checking)
+            collision_checking=bool(args.collision_checking),
+            trajectory_save_dir=args.trajectory_save_dir
         )
 
         # Actioner (runs the policy online)
