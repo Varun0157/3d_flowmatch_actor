@@ -1,114 +1,50 @@
-"""Visualize saved trajectories using Plotly 3D plots."""
+"""Visualize saved trajectories using Matplotlib 3D plots."""
 
 import argparse
 import os
 import glob
 import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
-def create_gradient_colors(n_points, colorscale_name):
-    """Create a list of colors with gradient based on timestep."""
-    import plotly.colors as pc
-
-    if colorscale_name == "blues":
-        colors = pc.sequential.Blues
-    elif colorscale_name == "reds":
-        colors = pc.sequential.Reds
-    elif colorscale_name == "greens":
-        colors = pc.sequential.Greens
-    elif colorscale_name == "oranges":
-        colors = pc.sequential.Oranges
-    else:
-        colors = pc.sequential.Viridis
-
-    result = []
-    for i in range(n_points):
-        t = i / max(n_points - 1, 1)
-        idx = int(t * (len(colors) - 1))
-        result.append(colors[idx])
-
-    return result
-
-
-def plot_trajectory(fig, traj, name, color_base, row, col,
-                    show_legend=True, marker_size=4, line_width=2, dash=None):
-    """Add a trajectory to the plot with time gradient."""
+def plot_trajectory_3d(ax, traj, label, color, linestyle='-', linewidth=0.8, alpha=0.8,
+                       show_waypoints=False, waypoint_size=3):
+    """Plot a single trajectory on a 3D axis."""
     if len(traj) == 0:
         return
 
-    n_points = len(traj)
-    colors = create_gradient_colors(n_points, color_base)
+    ax.plot(traj[:, 0], traj[:, 1], traj[:, 2],
+            label=label, color=color, linestyle=linestyle,
+            linewidth=linewidth, alpha=alpha)
 
-    # Line trace
-    fig.add_trace(
-        go.Scatter3d(
-            x=traj[:, 0],
-            y=traj[:, 1],
-            z=traj[:, 2],
-            mode='lines+markers',
-            name=name,
-            line=dict(
-                color=colors[len(colors)//2],
-                width=line_width,
-                dash=dash
-            ),
-            marker=dict(
-                size=marker_size,
-                color=list(range(n_points)),
-                colorscale=color_base.capitalize(),
-                showscale=False,
-            ),
-            showlegend=show_legend,
-            legendgroup=name,
-        ),
-        row=row, col=col
-    )
+    # Show all waypoints as small spheres
+    if show_waypoints:
+        ax.scatter(traj[:, 0], traj[:, 1], traj[:, 2],
+                   color=color, s=waypoint_size, alpha=0.6)
 
-    # Start marker
-    fig.add_trace(
-        go.Scatter3d(
-            x=[traj[0, 0]],
-            y=[traj[0, 1]],
-            z=[traj[0, 2]],
-            mode='markers',
-            name=f'{name} (start)',
-            marker=dict(
-                size=10,
-                color=colors[0],
-                line=dict(color='black', width=2),
-                symbol='circle',
-            ),
-            showlegend=False,
-            legendgroup=name,
-        ),
-        row=row, col=col
-    )
+    # Start marker (larger, with border)
+    ax.scatter(traj[0, 0], traj[0, 1], traj[0, 2],
+               color=color, s=40, marker='o', edgecolors='black', linewidths=0.5)
 
-    # End marker
-    fig.add_trace(
-        go.Scatter3d(
-            x=[traj[-1, 0]],
-            y=[traj[-1, 1]],
-            z=[traj[-1, 2]],
-            mode='markers',
-            name=f'{name} (end)',
-            marker=dict(
-                size=12,
-                color=colors[-1],
-                line=dict(color='black', width=2),
-                symbol='diamond',
-            ),
-            showlegend=False,
-            legendgroup=name,
-        ),
-        row=row, col=col
-    )
+    # End marker (diamond)
+    ax.scatter(traj[-1, 0], traj[-1, 1], traj[-1, 2],
+               color=color, s=60, marker='D', edgecolors='black', linewidths=0.5)
 
 
-def visualize_episode(npz_path, output_path=None, show=False):
-    """Visualize trajectories from a single episode with 3x2 pairwise comparison grid."""
+def setup_3d_axis(ax, title):
+    """Configure 3D axis appearance."""
+    ax.set_xlabel('X', fontsize=8)
+    ax.set_ylabel('Y', fontsize=8)
+    ax.set_zlabel('Z', fontsize=8)
+    ax.set_title(title, fontsize=10)
+    ax.tick_params(labelsize=7)
+    ax.set_facecolor('white')
+    ax.legend(loc='upper left', fontsize=7)
+
+
+def visualize_episode(npz_path, show=True):
+    """Visualize trajectories from a single episode with three separate comparison figures."""
     data = np.load(npz_path, allow_pickle=True)
 
     gt_left = data['gt_left']
@@ -120,115 +56,97 @@ def visualize_episode(npz_path, output_path=None, show=False):
     success = data['success']
     max_reward = data['max_reward']
 
-    # Create 3x2 subplot grid
-    # Rows: GT vs Pred, GT vs Exec, Pred vs Exec
-    # Cols: Left arm, Right arm
-    fig = make_subplots(
-        rows=3, cols=2,
-        subplot_titles=(
-            'Left: GT vs Predicted', 'Right: GT vs Predicted',
-            'Left: GT vs Executed', 'Right: GT vs Executed',
-            'Left: Predicted vs Executed', 'Right: Predicted vs Executed'
-        ),
-        specs=[
-            [{'type': 'scatter3d'}, {'type': 'scatter3d'}],
-            [{'type': 'scatter3d'}, {'type': 'scatter3d'}],
-            [{'type': 'scatter3d'}, {'type': 'scatter3d'}]
-        ],
-        horizontal_spacing=0.02,
-        vertical_spacing=0.08
-    )
-
-    # Row 1: GT vs Predicted
-    plot_trajectory(fig, gt_left, 'Ground Truth', 'blues', 1, 1)
-    if len(pred_left) > 0:
-        plot_trajectory(fig, pred_left, 'Predicted', 'reds', 1, 1, dash='dash')
-
-    plot_trajectory(fig, gt_right, 'Ground Truth', 'blues', 1, 2, show_legend=False)
-    if len(pred_right) > 0:
-        plot_trajectory(fig, pred_right, 'Predicted', 'reds', 1, 2, show_legend=False, dash='dash')
-
-    # Row 2: GT vs Executed
-    plot_trajectory(fig, gt_left, 'Ground Truth', 'blues', 2, 1, show_legend=False)
-    if len(exec_left) > 0:
-        plot_trajectory(fig, exec_left[:, :7], 'Executed', 'greens', 2, 1)
-
-    plot_trajectory(fig, gt_right, 'Ground Truth', 'blues', 2, 2, show_legend=False)
-    if len(exec_right) > 0:
-        plot_trajectory(fig, exec_right[:, :7], 'Executed', 'greens', 2, 2, show_legend=False)
-
-    # Row 3: Predicted vs Executed
-    if len(pred_left) > 0:
-        plot_trajectory(fig, pred_left, 'Predicted', 'reds', 3, 1, show_legend=False, dash='dash')
-    if len(exec_left) > 0:
-        plot_trajectory(fig, exec_left[:, :7], 'Executed', 'greens', 3, 1, show_legend=False)
-
-    if len(pred_right) > 0:
-        plot_trajectory(fig, pred_right, 'Predicted', 'reds', 3, 2, show_legend=False, dash='dash')
-    if len(exec_right) > 0:
-        plot_trajectory(fig, exec_right[:, :7], 'Executed', 'greens', 3, 2, show_legend=False)
-
     # Extract episode info from path
     episode_name = os.path.basename(npz_path).replace('_trajectories.npz', '')
     variation = os.path.basename(os.path.dirname(npz_path))
     task = os.path.basename(os.path.dirname(os.path.dirname(npz_path)))
 
     success_str = "SUCCESS" if success else "FAILURE"
-    title_color = "green" if success else "red"
 
-    # Update layout with white background
-    fig.update_layout(
-        title=dict(
-            text=f'{task} / {variation} / {episode_name}<br>'
-                 f'<span style="font-size:14px; color:{title_color}">Result: {success_str} (max_reward: {max_reward:.2f})</span>',
-            x=0.5,
-            font=dict(size=18)
-        ),
-        showlegend=True,
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="right",
-            x=0.99,
-            bgcolor="rgba(255,255,255,0.9)"
-        ),
-        width=1200,
-        height=1200,
-        margin=dict(l=0, r=0, t=80, b=0),
-        paper_bgcolor='white',
-        plot_bgcolor='white'
-    )
+    # Colors
+    gt_color = 'blue'
+    pred_color = 'red'
+    exec_color = 'green'
 
-    # Update all 3D scenes with white background
-    scene_settings = dict(
-        xaxis=dict(title='X', backgroundcolor='white', gridcolor='lightgray'),
-        yaxis=dict(title='Y', backgroundcolor='white', gridcolor='lightgray'),
-        zaxis=dict(title='Z', backgroundcolor='white', gridcolor='lightgray'),
-        bgcolor='white',
-        aspectmode='data'
-    )
+    # Figure 1: GT vs Predicted
+    fig1 = plt.figure(figsize=(12, 5), facecolor='white')
+    fig1.suptitle(f'{task} / {variation} / {episode_name} - GT vs Predicted\n{success_str} (reward: {max_reward:.2f})',
+                  fontsize=11)
 
-    fig.update_layout(
-        scene=scene_settings,
-        scene2=scene_settings,
-        scene3=scene_settings,
-        scene4=scene_settings,
-        scene5=scene_settings,
-        scene6=scene_settings
-    )
+    ax1_left = fig1.add_subplot(121, projection='3d')
+    plot_trajectory_3d(ax1_left, gt_left, f'Ground Truth ({len(gt_left)} pts)', gt_color,
+                       show_waypoints=True, waypoint_size=5)
+    if len(pred_left) > 0:
+        plot_trajectory_3d(ax1_left, pred_left, f'Predicted ({len(pred_left)} pts)', pred_color,
+                           linestyle='--', show_waypoints=True, waypoint_size=30)
+    setup_3d_axis(ax1_left, 'Left Arm')
 
-    if output_path:
-        fig.write_html(output_path)
-        print(f"Saved plot to {output_path}")
+    ax1_right = fig1.add_subplot(122, projection='3d')
+    plot_trajectory_3d(ax1_right, gt_right, f'Ground Truth ({len(gt_right)} pts)', gt_color,
+                       show_waypoints=True, waypoint_size=5)
+    if len(pred_right) > 0:
+        plot_trajectory_3d(ax1_right, pred_right, f'Predicted ({len(pred_right)} pts)', pred_color,
+                           linestyle='--', show_waypoints=True, waypoint_size=30)
+    setup_3d_axis(ax1_right, 'Right Arm')
+
+    plt.tight_layout()
+
+    # Figure 2: GT vs Executed
+    fig2 = plt.figure(figsize=(12, 5), facecolor='white')
+    fig2.suptitle(f'{task} / {variation} / {episode_name} - GT vs Executed\n{success_str} (reward: {max_reward:.2f})',
+                  fontsize=11)
+
+    ax2_left = fig2.add_subplot(121, projection='3d')
+    plot_trajectory_3d(ax2_left, gt_left, f'Ground Truth ({len(gt_left)} pts)', gt_color,
+                       show_waypoints=True, waypoint_size=5)
+    if len(exec_left) > 0:
+        plot_trajectory_3d(ax2_left, exec_left[:, :3], f'Executed ({len(exec_left)} pts)', exec_color,
+                           show_waypoints=True, waypoint_size=30)
+    setup_3d_axis(ax2_left, 'Left Arm')
+
+    ax2_right = fig2.add_subplot(122, projection='3d')
+    plot_trajectory_3d(ax2_right, gt_right, f'Ground Truth ({len(gt_right)} pts)', gt_color,
+                       show_waypoints=True, waypoint_size=5)
+    if len(exec_right) > 0:
+        plot_trajectory_3d(ax2_right, exec_right[:, :3], f'Executed ({len(exec_right)} pts)', exec_color,
+                           show_waypoints=True, waypoint_size=30)
+    setup_3d_axis(ax2_right, 'Right Arm')
+
+    plt.tight_layout()
+
+    # Figure 3: Predicted vs Executed
+    fig3 = plt.figure(figsize=(12, 5), facecolor='white')
+    fig3.suptitle(f'{task} / {variation} / {episode_name} - Predicted vs Executed\n{success_str} (reward: {max_reward:.2f})',
+                  fontsize=11)
+
+    ax3_left = fig3.add_subplot(121, projection='3d')
+    if len(pred_left) > 0:
+        plot_trajectory_3d(ax3_left, pred_left, f'Predicted ({len(pred_left)} pts)', pred_color,
+                           linestyle='--', show_waypoints=True, waypoint_size=30)
+    if len(exec_left) > 0:
+        plot_trajectory_3d(ax3_left, exec_left[:, :3], f'Executed ({len(exec_left)} pts)', exec_color,
+                           show_waypoints=True, waypoint_size=30)
+    setup_3d_axis(ax3_left, 'Left Arm')
+
+    ax3_right = fig3.add_subplot(122, projection='3d')
+    if len(pred_right) > 0:
+        plot_trajectory_3d(ax3_right, pred_right, f'Predicted ({len(pred_right)} pts)', pred_color,
+                           linestyle='--', show_waypoints=True, waypoint_size=30)
+    if len(exec_right) > 0:
+        plot_trajectory_3d(ax3_right, exec_right[:, :3], f'Executed ({len(exec_right)} pts)', exec_color,
+                           show_waypoints=True, waypoint_size=30)
+    setup_3d_axis(ax3_right, 'Right Arm')
+
+    plt.tight_layout()
 
     if show:
-        fig.show()
+        plt.show()
 
-    return fig
+    return fig1, fig2, fig3
 
 
-def visualize_all_episodes(trajectory_dir, output_dir=None, show=False):
-    """Visualize all episodes in a trajectory directory."""
+def visualize_all_episodes(trajectory_dir, show=True):
+    """Visualize all episodes in a trajectory directory one by one."""
     npz_files = sorted(glob.glob(os.path.join(trajectory_dir, '**', '*_trajectories.npz'), recursive=True))
 
     if not npz_files:
@@ -236,22 +154,17 @@ def visualize_all_episodes(trajectory_dir, output_dir=None, show=False):
         return
 
     print(f"Found {len(npz_files)} trajectory files")
+    print("Press any key to advance to next episode, or close all windows to exit.")
 
-    for npz_path in npz_files:
-        if output_dir:
-            rel_path = os.path.relpath(npz_path, trajectory_dir)
-            output_path = os.path.join(output_dir, rel_path.replace('.npz', '.html'))
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        else:
-            output_path = npz_path.replace('.npz', '.html')
-
+    for i, npz_path in enumerate(npz_files):
+        print(f"\n[{i+1}/{len(npz_files)}] {npz_path}")
         try:
-            visualize_episode(npz_path, output_path, show=show)
+            visualize_episode(npz_path, show=show)
         except Exception as e:
             print(f"Error processing {npz_path}: {e}")
 
 
-def create_summary_plot(trajectory_dir, output_path=None, show=False):
+def create_summary_plot(trajectory_dir, show=True):
     """Create a summary plot showing all episodes overlaid."""
     npz_files = sorted(glob.glob(os.path.join(trajectory_dir, '**', '*_trajectories.npz'), recursive=True))
 
@@ -259,12 +172,10 @@ def create_summary_plot(trajectory_dir, output_path=None, show=False):
         print(f"No trajectory files found in {trajectory_dir}")
         return
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=('Left Arm (All Episodes)', 'Right Arm (All Episodes)'),
-        specs=[[{'type': 'scatter3d'}, {'type': 'scatter3d'}]],
-        horizontal_spacing=0.05
-    )
+    fig = plt.figure(figsize=(14, 6), facecolor='white')
+
+    ax_left = fig.add_subplot(121, projection='3d')
+    ax_right = fig.add_subplot(122, projection='3d')
 
     success_count = 0
     total_count = 0
@@ -276,123 +187,52 @@ def create_summary_plot(trajectory_dir, output_path=None, show=False):
         if success:
             success_count += 1
 
-        opacity = 0.6
         exec_left = data['exec_left']
         exec_right = data['exec_right']
-        episode_name = os.path.basename(npz_path).replace('_trajectories.npz', '')
+
+        color = 'green' if success else 'red'
+        alpha = 0.4
 
         if len(exec_left) > 0:
-            fig.add_trace(
-                go.Scatter3d(
-                    x=exec_left[:, 0],
-                    y=exec_left[:, 1],
-                    z=exec_left[:, 2],
-                    mode='lines',
-                    name=episode_name,
-                    line=dict(
-                        color='green' if success else 'red',
-                        width=2,
-                    ),
-                    opacity=opacity,
-                    showlegend=(i < 10),
-                    legendgroup=episode_name,
-                ),
-                row=1, col=1
-            )
+            ax_left.plot(exec_left[:, 0], exec_left[:, 1], exec_left[:, 2],
+                        color=color, linewidth=0.5, alpha=alpha)
 
         if len(exec_right) > 0:
-            fig.add_trace(
-                go.Scatter3d(
-                    x=exec_right[:, 0],
-                    y=exec_right[:, 1],
-                    z=exec_right[:, 2],
-                    mode='lines',
-                    name=episode_name,
-                    line=dict(
-                        color='green' if success else 'red',
-                        width=2,
-                    ),
-                    opacity=opacity,
-                    showlegend=False,
-                    legendgroup=episode_name,
-                ),
-                row=1, col=2
-            )
+            ax_right.plot(exec_right[:, 0], exec_right[:, 1], exec_right[:, 2],
+                         color=color, linewidth=0.5, alpha=alpha)
 
     # Plot ground truth from first episode as reference
     data = np.load(npz_files[0], allow_pickle=True)
     gt_left = data['gt_left']
     gt_right = data['gt_right']
 
-    fig.add_trace(
-        go.Scatter3d(
-            x=gt_left[:, 0],
-            y=gt_left[:, 1],
-            z=gt_left[:, 2],
-            mode='lines',
-            name='Ground Truth (ep0)',
-            line=dict(color='blue', width=4),
-            showlegend=True,
-        ),
-        row=1, col=1
-    )
-
-    fig.add_trace(
-        go.Scatter3d(
-            x=gt_right[:, 0],
-            y=gt_right[:, 1],
-            z=gt_right[:, 2],
-            mode='lines',
-            name='Ground Truth (ep0)',
-            line=dict(color='blue', width=4),
-            showlegend=False,
-        ),
-        row=1, col=2
-    )
+    ax_left.plot(gt_left[:, 0], gt_left[:, 1], gt_left[:, 2],
+                 color='blue', linewidth=2, label='GT (ep0)')
+    ax_right.plot(gt_right[:, 0], gt_right[:, 1], gt_right[:, 2],
+                  color='blue', linewidth=2, label='GT (ep0)')
 
     task = os.path.basename(os.path.dirname(os.path.dirname(npz_files[0])))
 
-    fig.update_layout(
-        title=dict(
-            text=f'{task} - All Episodes Summary<br>'
-                 f'<span style="font-size:14px">Success Rate: {success_count}/{total_count} '
-                 f'({100*success_count/total_count:.1f}%) | '
-                 f'<span style="color:green">Green=Success</span> | '
-                 f'<span style="color:red">Red=Failure</span> | '
-                 f'<span style="color:blue">Blue=GT</span></span>',
-            x=0.5,
-            font=dict(size=18)
-        ),
-        showlegend=True,
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01,
-            bgcolor="rgba(255,255,255,0.9)"
-        ),
-        width=1400,
-        height=700,
-        margin=dict(l=0, r=0, t=100, b=0),
-        paper_bgcolor='white',
-        plot_bgcolor='white'
-    )
+    fig.suptitle(f'{task} - All Episodes Summary\n'
+                 f'Success: {success_count}/{total_count} ({100*success_count/total_count:.1f}%) | '
+                 f'Green=Success | Red=Failure | Blue=GT', fontsize=11)
 
-    scene_settings = dict(
-        xaxis=dict(title='X', backgroundcolor='white', gridcolor='lightgray'),
-        yaxis=dict(title='Y', backgroundcolor='white', gridcolor='lightgray'),
-        zaxis=dict(title='Z', backgroundcolor='white', gridcolor='lightgray'),
-        bgcolor='white',
-        aspectmode='data'
-    )
-    fig.update_layout(scene=scene_settings, scene2=scene_settings)
+    ax_left.set_title('Left Arm', fontsize=10)
+    ax_left.set_xlabel('X', fontsize=8)
+    ax_left.set_ylabel('Y', fontsize=8)
+    ax_left.set_zlabel('Z', fontsize=8)
+    ax_left.legend(fontsize=7)
 
-    if output_path:
-        fig.write_html(output_path)
-        print(f"Saved summary plot to {output_path}")
+    ax_right.set_title('Right Arm', fontsize=10)
+    ax_right.set_xlabel('X', fontsize=8)
+    ax_right.set_ylabel('Y', fontsize=8)
+    ax_right.set_zlabel('Z', fontsize=8)
+    ax_right.legend(fontsize=7)
+
+    plt.tight_layout()
 
     if show:
-        fig.show()
+        plt.show()
 
     return fig
 
@@ -401,23 +241,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Visualize saved trajectories")
     parser.add_argument("--trajectory_dir", type=str, required=True,
                         help="Directory containing trajectory .npz files")
-    parser.add_argument("--output_dir", type=str, default=None,
-                        help="Output directory for HTML plots (default: same as input)")
     parser.add_argument("--single", type=str, default=None,
                         help="Path to single .npz file to visualize")
     parser.add_argument("--summary", action="store_true",
                         help="Create summary plot with all episodes overlaid")
-    parser.add_argument("--show", action="store_true",
-                        help="Show plots in browser")
 
     args = parser.parse_args()
 
     if args.single:
-        output = args.single.replace('.npz', '.html') if not args.output_dir else \
-                 os.path.join(args.output_dir, os.path.basename(args.single).replace('.npz', '.html'))
-        visualize_episode(args.single, output, show=args.show)
+        visualize_episode(args.single, show=True)
     elif args.summary:
-        output = os.path.join(args.output_dir or args.trajectory_dir, 'summary.html')
-        create_summary_plot(args.trajectory_dir, output, show=args.show)
+        create_summary_plot(args.trajectory_dir, show=True)
     else:
-        visualize_all_episodes(args.trajectory_dir, args.output_dir, show=args.show)
+        visualize_all_episodes(args.trajectory_dir, show=True)
