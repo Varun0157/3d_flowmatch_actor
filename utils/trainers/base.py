@@ -263,6 +263,7 @@ class BaseTrainTester:
 
         # Check for a checkpoint
         start_iter, best_loss = 0, None
+        no_improve_count = 0
         if self.args.checkpoint:
             start_iter, best_loss = self.load_checkpoint(model, ema_model, optimizer)
         print(model.module.workspace_normalizer)
@@ -322,10 +323,21 @@ class BaseTrainTester:
                     val_iters=1250
                 )
                 # save model
+                prev_best = best_loss
                 best_loss = self.save_checkpoint(
                     model, ema_model, optimizer, step_id,
                     new_loss, best_loss
                 )
+                # early stopping
+                if self.args.patience > 0:
+                    if best_loss == prev_best:
+                        no_improve_count += 1
+                        print(f"No improvement for {no_improve_count} validation(s)")
+                        if no_improve_count >= self.args.patience:
+                            print(f"Early stopping: no improvement for {self.args.patience} validations")
+                            break
+                    else:
+                        no_improve_count = 0
                 model.train()
             dist.barrier(device_ids=[torch.cuda.current_device()])
 

@@ -42,6 +42,7 @@ def parse_arguments():
         ('lr_scheduler', str, "constant"),
         ('wd', float, 5e-3),
         ('train_iters', int, 600000),
+        ('patience', int, 0),  # early stopping patience (0 = disabled)
         ('use_compile', str2bool, False),
         ('use_ema', str2bool, False),
         ('lv2_batch_size', int, 1),
