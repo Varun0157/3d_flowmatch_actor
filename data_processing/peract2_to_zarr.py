@@ -12,14 +12,19 @@ from tqdm import tqdm
 from data_processing.rlbench_utils import (
     keypoint_discovery,
     image_to_float_array,
-    store_instructions
+    store_instructions,
+    interpolate_trajectory,
+    quat_to_euler_np,
+    euler_to_quat_np
 )
+from utils.common_utils import str2bool
 
 
 NCAM = 3
 NHAND = 2
 IM_SIZE = 256
 DEPTH_SCALE = 2**24 - 1
+DEFAULT_INTERP_LEN = 50
 
 
 def parse_arguments():
@@ -27,7 +32,10 @@ def parse_arguments():
     # Tuples: (name, type, default)
     arguments = [
         ('root', str, '/data/group_data/katefgroup/VLA/peract2_raw_squash/'),
-        ('tgt', str, '/data/user_data/ngkanats/zarr_datasets/Peract2_zarr/')
+        ('tgt', str, '/data/user_data/ngkanats/zarr_datasets/Peract2_zarr/'),
+        ('store_trajectory', str2bool, False),
+        ('interp_len', int, DEFAULT_INTERP_LEN),
+        ('tasks', str, None)  # comma-separated task names, or None for all
     ]
     for arg in arguments:
         parser.add_argument(f'--{arg[0]}', type=arg[1], default=arg[2])
@@ -35,7 +43,35 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def all_tasks_main(split, tasks):
+def _interpolate_bimanual(left_traj, right_traj, num_steps):
+    """
+    Interpolate bimanual trajectories.
+    left_traj, right_traj: (T, 8) each - [x, y, z, qx, qy, qz, qw, gripper]
+    Returns: (num_steps, 2, 8)
+    """
+    def _interp_single(traj):
+        # Convert quaternion to euler for smooth interpolation
+        traj_euler = np.concatenate((
+            traj[:, :3],
+            quat_to_euler_np(traj[:, 3:7]),
+            traj[:, 7:]
+        ), axis=1)
+        # Interpolate
+        traj_interp = interpolate_trajectory(traj_euler, num_steps)
+        # Convert back to quaternion
+        traj_quat = np.concatenate((
+            traj_interp[:, :3],
+            euler_to_quat_np(traj_interp[:, 3:6]),
+            traj_interp[:, 6:]
+        ), axis=1)
+        return traj_quat
+
+    left_interp = _interp_single(left_traj)
+    right_interp = _interp_single(right_traj)
+    return np.stack([left_interp, right_interp], axis=1)
+
+
+def all_tasks_main(split, tasks, store_trajectory=False, interp_len=DEFAULT_INTERP_LEN):
     # Check if the zarr already exists
     filename = f"{STORE_PATH}/{split}.zarr"
     if os.path.exists(filename):
@@ -61,7 +97,8 @@ def all_tasks_main(split, tasks):
         _create("rgb", (NCAM, 3, IM_SIZE, IM_SIZE), "uint8")
         _create("depth", (NCAM, IM_SIZE, IM_SIZE), "float16")
         _create("proprioception", (3, NHAND, 8), "float32")
-        _create("action", (1, NHAND, 8), "float32")
+        traj_len = interp_len if store_trajectory else 1
+        _create("action", (traj_len, NHAND, 8), "float32")
         _create("proprioception_joints", (1, NHAND, 8), "float32")
         _create("action_joints", (1, NHAND, 8), "float32")
         _create("extrinsics", (NCAM, 4, 4), "float16")
@@ -124,8 +161,26 @@ def all_tasks_main(split, tasks):
                 prop = np.concatenate([prop_2, prop_1, prop], 1)
                 prop = prop.reshape(len(prop), 3, NHAND, 8)
 
-                # Action (keyframes, 1, 2, 8)
-                actions = states[1:].reshape(len(states[1:]), 1, NHAND, 8)
+                # Action (keyframes, traj_len, 2, 8)
+                if not store_trajectory:
+                    actions = states[1:].reshape(len(states[1:]), 1, NHAND, 8)
+                else:
+                    # Get all states from demo (not just keyposes)
+                    all_left = np.stack([np.concatenate([
+                        demo[k].left.gripper_pose, [demo[k].left.gripper_open]
+                    ]) for k in range(len(demo))]).astype(np.float32)
+                    all_right = np.stack([np.concatenate([
+                        demo[k].right.gripper_pose, [demo[k].right.gripper_open]
+                    ]) for k in range(len(demo))]).astype(np.float32)
+                    # Interpolate between each keypose pair
+                    actions = np.stack([
+                        _interpolate_bimanual(
+                            all_left[prev:next_ + 1],
+                            all_right[prev:next_ + 1],
+                            interp_len
+                        )
+                        for prev, next_ in zip(key_frames[:-1], key_frames[1:])
+                    ])
 
                 # Proprioception in joints (keyframes, 3, 2, 8)
                 states = np.stack([np.concatenate([
@@ -186,7 +241,7 @@ def _num2id(int_):
 
 
 if __name__ == "__main__":
-    tasks = [
+    ALL_TASKS = [
         'bimanual_push_box',
         'bimanual_lift_ball',
         'bimanual_dual_push_buttons',
@@ -204,9 +259,14 @@ if __name__ == "__main__":
     args = parse_arguments()
     ROOT = args.root
     STORE_PATH = args.tgt
+    # Filter tasks if specified
+    if args.tasks:
+        tasks = [t.strip() for t in args.tasks.split(',')]
+    else:
+        tasks = ALL_TASKS
     # Create zarr data
     for split in ['train', 'val']:
-        all_tasks_main(split, tasks)
+        all_tasks_main(split, tasks, args.store_trajectory, args.interp_len)
     # Store instructions as json (can be run independently)
     os.makedirs('instructions/peract2', exist_ok=True)
     instr_dict = store_instructions(ROOT, tasks)
