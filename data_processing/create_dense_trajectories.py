@@ -1,6 +1,9 @@
 """
-Create dense trajectory zarr from keypose zarr for a single task.
-Assumes all data is from one continuous task (no episode detection needed).
+Create dense trajectory zarr from keypose zarr.
+
+For each sample:
+  - Observation (rgb, depth, proprio) shows current state
+  - Action trajectory goes from proprio[-1] (current) to action (target)
 
 Usage:
     python data_processing/create_dense_trajectories.py \
@@ -31,13 +34,13 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def interpolate_bimanual(current_pose, next_pose, num_steps):
+def interpolate_bimanual(start_pose, end_pose, num_steps):
     """
     Interpolate trajectory between two bimanual poses.
 
     Args:
-        current_pose: (2, 8) - [left, right] each with [x,y,z, qx,qy,qz,qw, gripper]
-        next_pose: (2, 8)
+        start_pose: (2, 8) - [left, right] each with [x,y,z, qx,qy,qz,qw, gripper]
+        end_pose: (2, 8)
 
     Returns:
         (num_steps, 2, 8) - interpolated trajectory
@@ -65,8 +68,8 @@ def interpolate_bimanual(current_pose, next_pose, num_steps):
 
         return traj_quat
 
-    left_traj = _interp_single_arm(current_pose[0], next_pose[0])
-    right_traj = _interp_single_arm(current_pose[1], next_pose[1])
+    left_traj = _interp_single_arm(start_pose[0], end_pose[0])
+    right_traj = _interp_single_arm(start_pose[1], end_pose[1])
 
     return np.stack([left_traj, right_traj], axis=1)  # (num_steps, 2, 8)
 
@@ -82,11 +85,13 @@ def main():
     print(f"Loading: {args.src}")
     src = zarr.open(args.src, 'r')
 
-    actions = src['action'][:]  # (N, 1, 2, 8)
-    N = len(actions)
+    proprio = src['proprioception'][:]  # (N, 3, 2, 8) - 3 history frames
+    action = src['action'][:]           # (N, 1, 2, 8) - target keypose
+    N = len(action)
 
-    print(f"Source: {N} keyposes")
-    print(f"Output: {N-1} samples with trajectory length {args.traj_len}")
+    print(f"Source: {N} samples")
+    print(f"Creating trajectories: proprio[-1] (current) → action (target)")
+    print(f"Trajectory length: {args.traj_len}")
 
     # Create target
     os.makedirs(os.path.dirname(args.tgt) or '.', exist_ok=True)
@@ -118,17 +123,19 @@ def main():
             if field in src:
                 _create(field, src[field].shape[1:], src[field].dtype)
 
-        # Process each transition (keypose i -> keypose i+1)
+        # Process each sample
         print("\nInterpolating trajectories...")
-        for i in tqdm(range(N - 1)):
-            current_pose = actions[i, 0]      # (2, 8)
-            next_pose = actions[i + 1, 0]     # (2, 8)
+        for i in tqdm(range(N)):
+            # Current state: proprio[-1] (last history frame)
+            current_pose = proprio[i, -1]  # (2, 8) - where robot IS
 
-            # Interpolate trajectory
-            traj = interpolate_bimanual(current_pose, next_pose, args.traj_len)
+            # Target: action (the keypose to reach)
+            target_pose = action[i, 0]     # (2, 8) - where robot should GO
 
-            # Append to target
-            # Observation at keypose i, action is trajectory to keypose i+1
+            # Interpolate trajectory from current to target
+            traj = interpolate_bimanual(current_pose, target_pose, args.traj_len)
+
+            # Append to target - observation unchanged, action is now trajectory
             tgt['rgb'].append(src['rgb'][i:i+1])
             tgt['depth'].append(src['depth'][i:i+1])
             tgt['proprioception'].append(src['proprioception'][i:i+1])
@@ -146,6 +153,15 @@ def main():
         print("Shapes:")
         for k in sorted(check.keys()):
             print(f"  {k}: {check[k].shape}")
+
+    # Sanity check: verify trajectory starts match proprio
+    print("\nSanity check - trajectory start matches proprio[-1]:")
+    with zarr.open(args.tgt, 'r') as check:
+        for i in range(3):
+            proprio_current = check['proprioception'][i, -1, 0, :3]
+            traj_start = check['action'][i, 0, 0, :3]
+            match = np.allclose(proprio_current, traj_start)
+            print(f"  Sample {i}: match={match}")
 
 
 if __name__ == '__main__':
