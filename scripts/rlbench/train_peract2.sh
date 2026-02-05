@@ -1,9 +1,9 @@
 main_dir=Peract2
 
-DATA_PATH=/home/varun-edachali/Research/RRC/policy/3d_flowmatch_actor
+DATA_PATH=/scratch2/cross-emb/3DFA/dense
 
-train_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/train.zarr
-eval_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/val.zarr
+train_data_dir=$DATA_PATH/Peract2_zarr_dense/train.zarr
+eval_data_dir=$DATA_PATH/Peract2_zarr_dense/val.zarr
 train_instructions=instructions/peract2/instructions.json
 val_instructions=instructions/peract2/instructions.json
 
@@ -32,7 +32,7 @@ lv2_batch_size=1 # you can increase this and divide B equally, speed/accuracy tr
 # Model arguments, change (some of) these for new architectures
 model_type=denoise3d
 bimanual=true
-keypose_only=true
+keypose_only=false
 pre_tokenize=true
 workspace_normalizer_buffer=0.05
 
@@ -52,7 +52,7 @@ rotation_format=quat_xyzw
 denoise_timesteps=5
 denoise_model=rectified_flow
 
-run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-$denoise_model-pushbox
+run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-keypose_only$keypose_only-$denoise_model-pushbox
 checkpoint=train_logs/${main_dir}/${run_log_dir}/last.pth
 
 ngpus=1 # we used 4
