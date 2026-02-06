@@ -6,6 +6,89 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn.functional as F
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+
+def plot_predicted_trajectory(actions, curr_left, curr_right, save_path,
+                              step_id=0, demo_id=0):
+    """
+    Plot predicted trajectory for debugging.
+
+    Args:
+        actions: (T, 2, 8) predicted trajectory
+        curr_left: (8,) current left arm state
+        curr_right: (8,) current right arm state
+        save_path: directory to save plots
+    """
+    os.makedirs(save_path, exist_ok=True)
+    T = actions.shape[0]
+    t = np.arange(T)
+
+    fig = plt.figure(figsize=(18, 12))
+
+    # --- 3D trajectory plot ---
+    ax1 = fig.add_subplot(2, 3, 1, projection='3d')
+    for arm_idx, (arm_name, curr) in enumerate(
+        [("Left", curr_left), ("Right", curr_right)]
+    ):
+        pos = actions[:, arm_idx, :3]
+        ax1.plot(pos[:, 0], pos[:, 1], pos[:, 2],
+                 '-o', markersize=3, label=f'{arm_name} pred')
+        ax1.scatter(*pos[0, :3], marker='^', s=100, label=f'{arm_name} pred start')
+        ax1.scatter(*pos[-1, :3], marker='s', s=100, label=f'{arm_name} pred end')
+        ax1.scatter(*curr[:3], marker='*', s=200, label=f'{arm_name} current')
+    ax1.set_xlabel('X')
+    ax1.set_ylabel('Y')
+    ax1.set_zlabel('Z')
+    ax1.set_title('3D Trajectories')
+    ax1.legend(fontsize=6)
+
+    # --- Position over time ---
+    for dim, dim_name in enumerate(['X', 'Y', 'Z']):
+        ax = fig.add_subplot(2, 3, 2 + dim)
+        for arm_idx, (arm_name, curr) in enumerate(
+            [("Left", curr_left), ("Right", curr_right)]
+        ):
+            ax.plot(t, actions[:, arm_idx, dim], '-o', markersize=3,
+                    label=f'{arm_name} pred')
+            ax.axhline(y=curr[dim], linestyle='--', alpha=0.5,
+                       label=f'{arm_name} current')
+        ax.set_xlabel('Step')
+        ax.set_ylabel(dim_name)
+        ax.set_title(f'{dim_name} position over time')
+        ax.legend(fontsize=7)
+
+    # --- Quaternion components over time ---
+    ax5 = fig.add_subplot(2, 3, 5)
+    for arm_idx, arm_name in enumerate(["Left", "Right"]):
+        quats = actions[:, arm_idx, 3:7]
+        for qi, qname in enumerate(['qx', 'qy', 'qz', 'qw']):
+            ax5.plot(t, quats[:, qi], '-', markersize=2,
+                     label=f'{arm_name} {qname}')
+    ax5.set_xlabel('Step')
+    ax5.set_ylabel('Quaternion')
+    ax5.set_title('Rotation (quaternion) over time')
+    ax5.legend(fontsize=5, ncol=2)
+
+    # --- Step-to-step position delta ---
+    ax6 = fig.add_subplot(2, 3, 6)
+    for arm_idx, arm_name in enumerate(["Left", "Right"]):
+        pos = actions[:, arm_idx, :3]
+        deltas = np.linalg.norm(np.diff(pos, axis=0), axis=1)
+        ax6.plot(t[1:], deltas, '-o', markersize=3, label=f'{arm_name}')
+    ax6.set_xlabel('Step')
+    ax6.set_ylabel('Position delta (m)')
+    ax6.set_title('Step-to-step position change')
+    ax6.legend()
+
+    fig.suptitle(f'Demo {demo_id}, Step {step_id}', fontsize=14)
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_path, f'demo{demo_id}_step{step_id}.png'),
+                dpi=100)
+    plt.close(fig)
 
 from rlbench.observation_config import ObservationConfig, CameraConfig
 from rlbench.environment import Environment
@@ -322,6 +405,32 @@ class RLBenchEnv:
                     # Execute entire predicted trajectory step by step
                     actions = output[-1].cpu().numpy()
                     actions[..., -1] = actions[..., -1].round()
+
+                    # Debug: compare predicted trajectory vs current state
+                    curr_left = np.concatenate([obs.left.gripper_pose, [obs.left.gripper_open]])
+                    curr_right = np.concatenate([obs.right.gripper_pose, [obs.right.gripper_open]])
+                    print(f"\n--- Step {step_id} ---")
+                    print(f"  Current left  pos: {curr_left[:3]}")
+                    print(f"  Pred[0] left  pos: {actions[0, 0, :3]}")
+                    print(f"  Pred[-1] left pos: {actions[-1, 0, :3]}")
+                    print(f"  Current right pos: {curr_right[:3]}")
+                    print(f"  Pred[0] right pos: {actions[0, 1, :3]}")
+                    print(f"  Pred[-1] right pos: {actions[-1, 1, :3]}")
+                    print(f"  Pred pos range L: {actions[:, 0, :3].min(0)} -> {actions[:, 0, :3].max(0)}")
+                    print(f"  Pred pos range R: {actions[:, 1, :3].min(0)} -> {actions[:, 1, :3].max(0)}")
+                    print(f"  Gripper L: {actions[:, 0, -1]}")
+                    print(f"  Gripper R: {actions[:, 1, -1]}")
+
+                    # Save debug plots
+                    if self.trajectory_save_dir is not None:
+                        plot_predicted_trajectory(
+                            actions, curr_left, curr_right,
+                            save_path=os.path.join(
+                                self.trajectory_save_dir, task_str,
+                                f"variation{variation}", "debug_plots"
+                            ),
+                            step_id=step_id, demo_id=demo_id
+                        )
 
                     # Store predicted trajectory (left arm: actions[:, 0], right arm: actions[:, 1])
                     pred_left_traj.append(actions[:, 0])
