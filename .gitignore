@@ -1,5 +1,5 @@
-PyRep/ 
-RLBench/
+PyRep/
+RLBench/ 
 **/*.zarr
 
 PyRep/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04/

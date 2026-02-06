@@ -304,7 +304,8 @@ class BaseTrainTester:
                 iter_loader = iter(train_loader)
                 sample = next(iter_loader)
 
-            self.train_one_step(model, optimizer, scaler, lr_scheduler, sample)
+            self.train_one_step(model, optimizer, scaler, lr_scheduler, sample,
+                               step_id=step_id)
             self.ema.step(model, ema_model, self.args.use_ema, step_id)
 
             if (step_id + 1) % self.args.val_freq == 0 and dist.get_rank() == 0:
@@ -360,7 +361,8 @@ class BaseTrainTester:
             )
         return out  # loss if training, else action
 
-    def train_one_step(self, model, optimizer, scaler, lr_scheduler, sample):
+    def train_one_step(self, model, optimizer, scaler, lr_scheduler, sample,
+                       step_id=0):
         """Run a single training step."""
         optimizer.zero_grad()
 
@@ -380,6 +382,10 @@ class BaseTrainTester:
 
         # Step the lr scheduler
         lr_scheduler.step()
+
+        # Log training loss periodically
+        if step_id % 50 == 0 and dist.get_rank() == 0:
+            wandb.log({"train/loss": loss.item()}, step=step_id)
 
     @torch.inference_mode()
     def evaluate_nsteps(self, model, loader, step_id, val_iters, split='val'):
