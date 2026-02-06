@@ -32,7 +32,7 @@ lv2_batch_size=1 # you can increase this and divide B equally, speed/accuracy tr
 # Model arguments, change (some of) these for new architectures
 model_type=denoise3d
 bimanual=true
-keypose_only=false
+keypose_only=true
 pre_tokenize=true
 workspace_normalizer_buffer=0.05
 
