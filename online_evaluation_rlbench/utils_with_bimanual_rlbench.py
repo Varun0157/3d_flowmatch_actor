@@ -94,7 +94,8 @@ from rlbench.observation_config import ObservationConfig, CameraConfig
 from rlbench.environment import Environment
 from rlbench.action_modes.action_mode import BimanualMoveArmThenGripper
 from rlbench.action_modes.gripper_action_modes import BimanualDiscrete, assert_action_shape
-from rlbench.action_modes.arm_action_modes import BimanualEndEffectorPoseViaPlanning, BimanualJointPosition
+from rlbench.action_modes.arm_action_modes import BimanualEndEffectorPoseViaPlanning
+from rlbench.action_modes.action_mode import BimanualJointPositionActionMode
 from rlbench.backend.exceptions import InvalidActionError
 from pyrep.errors import IKError, ConfigurationPathError
 from pyrep.const import RenderMode
@@ -190,10 +191,12 @@ class JointMover:
         if self._last_action is not None:
             action[:, 7] = self._last_action[:, 7].copy()
 
-        # Format for RLBench: [right_7, left_7, right_gripper, left_gripper]
+        # Format for BimanualJointPositionActionMode:
+        # (16,) = [right_j1..j7, right_gripper, left_j1..j7, left_gripper]
+        # Our action is ordered (left=0, right=1), RLBench expects (right, left)
         ravel_action = np.concatenate([
-            action[1, :7], action[0, :7],
-            [action[1, 7], action[0, 7]]
+            action[1, :7], [action[1, 7]],  # right joints + gripper
+            action[0, :7], [action[0, 7]]   # left joints + gripper
         ])
         obs, reward, terminate = self._task.step(ravel_action)
 
@@ -207,8 +210,8 @@ class JointMover:
             )
         ):
             ravel_action = np.concatenate([
-                target[1, :7], target[0, :7],
-                [target[1, 7], target[0, 7]]
+                target[1, :7], [target[1, 7]],
+                target[0, :7], [target[0, 7]]
             ])
             obs, reward, terminate = self._task.step(ravel_action)
 
@@ -280,13 +283,13 @@ class RLBenchEnv:
         )
 
         if action_space == 'joint':
-            arm_action_mode = BimanualJointPosition(absolute_mode=True)
+            self.action_mode = BimanualJointPositionActionMode()
         else:
             arm_action_mode = BimanualEndEffectorPoseViaPlanning(collision_checking=collision_checking)
-        self.action_mode = BimanualMoveArmThenGripper(
-            arm_action_mode=arm_action_mode,
-            gripper_action_mode=HandoverDiscrete() if 'handover' in task_str else BimanualDiscrete()
-        )
+            self.action_mode = BimanualMoveArmThenGripper(
+                arm_action_mode=arm_action_mode,
+                gripper_action_mode=HandoverDiscrete() if 'handover' in task_str else BimanualDiscrete()
+            )
         self.env = Environment(
             self.action_mode, str(data_path), self.obs_config,
             headless=headless, robot_setup="dual_panda"
