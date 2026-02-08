@@ -1,9 +1,9 @@
 main_dir=Peract2
 
-DATA_PATH=/scratch2/cross-emb/3DFA/dense
+DATA_PATH=/scratch2/cross-emb/3DFA/data/
 
-train_data_dir=$DATA_PATH/Peract2_zarr_dense/train.zarr
-eval_data_dir=$DATA_PATH/Peract2_zarr_dense/val.zarr
+train_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/train.zarr
+eval_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/val.zarr
 train_instructions=instructions/peract2/instructions.json
 val_instructions=instructions/peract2/instructions.json
 
