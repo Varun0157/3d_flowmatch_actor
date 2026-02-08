@@ -1,6 +1,6 @@
 main_dir=Peract2
 
-DATA_PATH=/home/varun-edachali/Research/RRC/policy/3d_flowmatch_actor/bimanual_push_box
+DATA_PATH=/scratch2/cross-emb/3DFA/dense
 
 train_data_dir=$DATA_PATH/Peract2_zarr_dense/train.zarr
 eval_data_dir=$DATA_PATH/Peract2_zarr_dense/val.zarr
