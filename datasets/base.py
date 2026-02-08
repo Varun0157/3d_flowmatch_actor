@@ -16,13 +16,15 @@ class BaseDataset(Dataset):
         relative_action=False,  # whether to return relative actions
         mem_limit=8,  # cache limit per dataset class in GigaBytes
         actions_only=False,  # return actions without observations
-        chunk_size=4  # chunk size for zarr
+        chunk_size=4,  # chunk size for zarr
+        action_space='eef'  # 'eef' or 'joint'
     ):
         super().__init__()
         self.copies = self.train_copies if copies is None else copies
         self._relative_action = relative_action
         self._actions_only = actions_only
         self.chunk_size = chunk_size
+        self._action_space = action_space
 
         # Load instructions
         self._instructions = self._load_instructions(instructions)
@@ -60,6 +62,8 @@ class BaseDataset(Dataset):
         return self._get_attr_by_idx(idx, 'proprioception', False)
 
     def _get_action(self, idx):
+        if self._action_space == 'joint':
+            return self._get_attr_by_idx(idx, 'action_joints', False)
         if self._relative_action:
             if 'rel_action' in self.annos:
                 return self._get_attr_by_idx(idx, 'rel_action', False)

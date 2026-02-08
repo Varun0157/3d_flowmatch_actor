@@ -94,7 +94,7 @@ from rlbench.observation_config import ObservationConfig, CameraConfig
 from rlbench.environment import Environment
 from rlbench.action_modes.action_mode import BimanualMoveArmThenGripper
 from rlbench.action_modes.gripper_action_modes import BimanualDiscrete, assert_action_shape
-from rlbench.action_modes.arm_action_modes import BimanualEndEffectorPoseViaPlanning
+from rlbench.action_modes.arm_action_modes import BimanualEndEffectorPoseViaPlanning, BimanualJointPosition
 from rlbench.backend.exceptions import InvalidActionError
 from pyrep.errors import IKError, ConfigurationPathError
 from pyrep.const import RenderMode
@@ -175,6 +175,47 @@ class Mover:
         return obs, reward, terminate
 
 
+class JointMover:
+    """Direct joint position control — no planning/IK needed."""
+
+    def __init__(self, task):
+        self._task = task
+        self._last_action = None
+
+    def __call__(self, action, collision_checking=False):
+        # action is (2, 8) = [7_joints + gripper] per arm, ordered (left, right)
+        target = action.copy()
+
+        # First execute without changing gripper
+        if self._last_action is not None:
+            action[:, 7] = self._last_action[:, 7].copy()
+
+        # Format for RLBench: [right_7, left_7, right_gripper, left_gripper]
+        ravel_action = np.concatenate([
+            action[1, :7], action[0, :7],
+            [action[1, 7], action[0, 7]]
+        ])
+        obs, reward, terminate = self._task.step(ravel_action)
+
+        # Then execute with gripper change if needed
+        if (
+            not reward == 1.0
+            and self._last_action is not None
+            and (
+                target[0, 7] != self._last_action[0, 7]
+                or target[1, 7] != self._last_action[1, 7]
+            )
+        ):
+            ravel_action = np.concatenate([
+                target[1, :7], target[0, :7],
+                [target[1, 7], target[0, 7]]
+            ])
+            obs, reward, terminate = self._task.step(ravel_action)
+
+        self._last_action = target.copy()
+        return obs, reward, terminate
+
+
 class Actioner:
 
     def __init__(self, policy=None, backbone='clip'):
@@ -223,21 +264,27 @@ class RLBenchEnv:
         headless=False,
         apply_cameras=("over_shoulder_left", "over_shoulder_right", "wrist_left", "wrist_right", "front"),
         collision_checking=False,
-        trajectory_save_dir=None
+        trajectory_save_dir=None,
+        action_space='eef'
     ):
 
         # setup required inputs
         self.data_path = data_path
         self.apply_cameras = apply_cameras
         self.trajectory_save_dir = trajectory_save_dir
+        self.action_space = action_space
 
         # setup RLBench environments
         self.obs_config = self.create_obs_config(
             image_size, apply_rgb, apply_depth, apply_pc, apply_cameras
         )
 
+        if action_space == 'joint':
+            arm_action_mode = BimanualJointPosition(absolute_mode=True)
+        else:
+            arm_action_mode = BimanualEndEffectorPoseViaPlanning(collision_checking=collision_checking)
         self.action_mode = BimanualMoveArmThenGripper(
-            arm_action_mode=BimanualEndEffectorPoseViaPlanning(collision_checking=collision_checking),
+            arm_action_mode=arm_action_mode,
             gripper_action_mode=HandoverDiscrete() if 'handover' in task_str else BimanualDiscrete()
         )
         self.env = Environment(
@@ -360,7 +407,10 @@ class RLBenchEnv:
             num_valid_demos += 1
             actioner.load_episode(descriptions)
 
-            move = Mover(task, max_tries=max_tries)
+            if self.action_space == 'joint':
+                move = JointMover(task)
+            else:
+                move = Mover(task, max_tries=max_tries)
             max_reward = 0.0
 
             # Extract ground truth trajectory from demo
@@ -421,8 +471,8 @@ class RLBenchEnv:
                     print(f"  Gripper L: {actions[:, 0, -1]}")
                     print(f"  Gripper R: {actions[:, 1, -1]}")
 
-                    # Save debug plots
-                    if self.trajectory_save_dir is not None:
+                    # Save debug plots (EEF-specific plots, skip for joints)
+                    if self.trajectory_save_dir is not None and self.action_space != 'joint':
                         plot_predicted_trajectory(
                             actions, curr_left, curr_right,
                             save_path=os.path.join(

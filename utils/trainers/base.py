@@ -54,7 +54,8 @@ class BaseTrainTester:
             instructions=self.args.train_instructions,
             relative_action=self.args.relative_action,
             mem_limit=self.args.memory_limit,
-            chunk_size=self.args.chunk_size
+            chunk_size=self.args.chunk_size,
+            action_space=self.args.action_space
         )
         val_dataset = self.dataset_cls(
             root=self.args.eval_data_dir,
@@ -62,7 +63,8 @@ class BaseTrainTester:
             copies=1,
             relative_action=self.args.relative_action,
             mem_limit=0.1,
-            chunk_size=self.args.chunk_size
+            chunk_size=self.args.chunk_size,
+            action_space=self.args.action_space
         )
         return train_dataset, val_dataset
 
@@ -129,7 +131,8 @@ class BaseTrainTester:
             rotation_format=self.args.rotation_format,
             denoise_timesteps=self.args.denoise_timesteps,
             denoise_model=self.args.denoise_model,
-            lv2_batch_size=self.args.lv2_batch_size
+            lv2_batch_size=self.args.lv2_batch_size,
+            action_space=self.args.action_space
         )
 
         # Print basic modules' parameters
@@ -156,7 +159,8 @@ class BaseTrainTester:
             relative_action=self.args.relative_action,
             mem_limit=0.1,
             actions_only=True,
-            chunk_size=self.args.chunk_size
+            chunk_size=self.args.chunk_size,
+            action_space=self.args.action_space
         )
 
         data_loader = DataLoader(
@@ -235,7 +239,13 @@ class BaseTrainTester:
         model = self.get_model()
         self.tokenizer = fetch_tokenizers(self.args.backbone)
         if not os.path.exists(self.args.checkpoint):
-            normalizer = self.get_workspace_normalizer()
+            if self.args.action_space == 'joint':
+                ndims = 7
+            elif self.args.rotation_format == 'euler':
+                ndims = 6
+            else:
+                ndims = 3
+            normalizer = self.get_workspace_normalizer(ndims=ndims)
             model.workspace_normalizer.copy_(normalizer)
             dist.barrier(device_ids=[torch.cuda.current_device()])
 
@@ -410,7 +420,10 @@ class BaseTrainTester:
                     sample["proprioception"].cuda(non_blocking=True)[:, :, 0]
                 )
 
-            losses, losses_B = compute_metrics(pred_action, gt_action)
+            losses, losses_B = compute_metrics(
+                pred_action, gt_action,
+                action_space=self.args.action_space
+            )
 
             # Gather global statistics
             for n, l in losses.items():
@@ -440,6 +453,8 @@ class BaseTrainTester:
             for key, value in values.items():
                 print(f"{key}: {value:.03f}")
 
+        if self.args.action_space == 'joint':
+            return -values[f'{split}-losses/mean/traj_joint_acc_001']
         return -values[f'{split}-losses/mean/traj_pos_acc_001']
 
     def load_checkpoint(self, model, ema_model, optimizer):

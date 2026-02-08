@@ -31,27 +31,41 @@ class DenoiseActor(nn.Module):
                  denoise_timesteps=100,
                  denoise_model="ddpm",
                  # Training arguments
-                 lv2_batch_size=1):
+                 lv2_batch_size=1,
+                 # Action space
+                 action_space='eef'):
         super().__init__()
         # Arguments to be accessed by the main class
         self._rotation_format = rotation_format
         self._relative = relative
         self._lv2_batch_size = lv2_batch_size
+        self._action_space = action_space
 
         # Vision-language encoder, runs only once
         self.encoder = None  # Implement this!
 
         # Action decoder, runs at every denoising timestep
-        self.traj_encoder = nn.Linear(
-            6 if rotation_format == 'euler' else 9,  # XYZ + Euler or 6D
-            embedding_dim
-        )
+        if action_space == 'joint':
+            traj_input_dim = 7  # 7 joint angles (no rotation conversion)
+        elif rotation_format == 'euler':
+            traj_input_dim = 6  # XYZ + Euler
+        else:
+            traj_input_dim = 9  # XYZ + 6D rotation
+        self.traj_encoder = nn.Linear(traj_input_dim, embedding_dim)
+
+        if action_space == 'joint':
+            head_pos_dim, head_rot_dim = 7, 0
+        elif rotation_format == 'euler':
+            head_pos_dim, head_rot_dim = 3, 3
+        else:
+            head_pos_dim, head_rot_dim = 3, 6
         self.prediction_head = TransformerHead(
             embedding_dim=embedding_dim,
             nhist=nhist * nhand,
             num_attn_heads=num_attn_heads,
             num_shared_attn_layers=num_shared_attn_layers,
-            rot_dim=3 if rotation_format == 'euler' else 6
+            pos_dim=head_pos_dim,
+            rot_dim=head_rot_dim
         )
 
         # Noise/denoise schedulers and hyperparameters
@@ -60,8 +74,13 @@ class DenoiseActor(nn.Module):
         )
         self.n_steps = denoise_timesteps
 
-        # Normalization for the 3D space, will be loaded in the main process
-        if rotation_format == 'euler':  # normalize pos+rot
+        # Normalization for the action space
+        if action_space == 'joint':
+            self.workspace_normalizer = nn.Parameter(
+                torch.Tensor([[0.]*7, [1.]*7]),  # (min, max) for 7 joint dims
+                requires_grad=False
+            )
+        elif rotation_format == 'euler':  # normalize pos+rot
             self.workspace_normalizer = nn.Parameter(
                 torch.Tensor([[0., 0, 0, 0, 0, 0], [1., 1, 1, 1, 1, 1]]),
                 requires_grad=False
@@ -96,13 +115,20 @@ class DenoiseActor(nn.Module):
         # Get features from normalized (relative) trajectory
         trajectory_feats = self.traj_encoder(trajectory)
 
-        # But use positions from unnormalized absolute trajectory
-        traj_xyz = self.unnormalize_pos(trajectory)[..., :3]
-        if self._relative:  # relative to absolute
-            traj_xyz = (
-                query_trajectory[..., :3]
-                + torch.cumsum(traj_xyz, dim=1)
+        # 3D positions for rotary PE on trajectory tokens
+        if self._action_space == 'joint':
+            # Joint-space: use EEF proprio position as proxy for 3D PE
+            traj_xyz = query_trajectory[..., :3].expand(
+                -1, trajectory.shape[1], -1, -1
             )
+        else:
+            # EEF: use positions from unnormalized absolute trajectory
+            traj_xyz = self.unnormalize_pos(trajectory)[..., :3]
+            if self._relative:  # relative to absolute
+                traj_xyz = (
+                    query_trajectory[..., :3]
+                    + torch.cumsum(traj_xyz, dim=1)
+                )
 
         return self.prediction_head(
             trajectory_feats,
@@ -133,15 +159,22 @@ class DenoiseActor(nn.Module):
                 fixed_inputs
             )
             out = out[-1]  # keep only last layer's output
-            pos = self.position_scheduler.step(
-                out[..., :3],
-                t_ind, trajectory[..., :3]
-            ).prev_sample
-            rot = self.rotation_scheduler.step(
-                out[..., 3:-1],
-                t_ind, trajectory[..., 3:]
-            ).prev_sample
-            trajectory = torch.cat((pos, rot), -1)
+            if self._action_space == 'joint':
+                # Single scheduler for all 7 joint dims
+                trajectory = self.position_scheduler.step(
+                    out[..., :-1],
+                    t_ind, trajectory
+                ).prev_sample
+            else:
+                pos = self.position_scheduler.step(
+                    out[..., :3],
+                    t_ind, trajectory[..., :3]
+                ).prev_sample
+                rot = self.rotation_scheduler.step(
+                    out[..., 3:-1],
+                    t_ind, trajectory[..., 3:]
+                ).prev_sample
+                trajectory = torch.cat((pos, rot), -1)
 
         return torch.cat((trajectory, out[..., -1:]), -1)
 
@@ -153,7 +186,12 @@ class DenoiseActor(nn.Module):
         )
 
         # Sample from learned model starting from noise
-        out_dim = 6 if self._rotation_format == 'euler' else 9
+        if self._action_space == 'joint':
+            out_dim = 7  # 7 joint angles
+        elif self._rotation_format == 'euler':
+            out_dim = 6
+        else:
+            out_dim = 9
         trajectory = torch.randn(
             size=tuple(trajectory_mask.shape) + (out_dim,),
             device=trajectory_mask.device
@@ -208,15 +246,21 @@ class DenoiseActor(nn.Module):
             )
 
             # Add noise to the clean trajectories
-            pos = self.position_scheduler.add_noise(
-                gt_trajectory[..., :3], noise[..., :3],
-                timesteps
-            )
-            rot = self.rotation_scheduler.add_noise(
-                gt_trajectory[..., 3:], noise[..., 3:],
-                timesteps
-            )
-            noisy_trajectory = torch.cat((pos, rot), -1)
+            if self._action_space == 'joint':
+                # Single scheduler for all 7 joint dims
+                noisy_trajectory = self.position_scheduler.add_noise(
+                    gt_trajectory, noise, timesteps
+                )
+            else:
+                pos = self.position_scheduler.add_noise(
+                    gt_trajectory[..., :3], noise[..., :3],
+                    timesteps
+                )
+                rot = self.rotation_scheduler.add_noise(
+                    gt_trajectory[..., 3:], noise[..., 3:],
+                    timesteps
+                )
+                noisy_trajectory = torch.cat((pos, rot), -1)
 
             # Predict the noise residual
             pred = self.policy_forward_pass(
@@ -225,18 +269,25 @@ class DenoiseActor(nn.Module):
             )
 
             # Compute loss
+            denoise_target = self.position_scheduler.prepare_target(
+                noise, gt_trajectory
+            )
             for layer_pred in pred:
-                pos = layer_pred[..., :3]
-                rot = layer_pred[..., 3:-1]
                 openess = layer_pred[..., -1:]
-                denoise_target = self.position_scheduler.prepare_target(
-                    noise, gt_trajectory
-                )
-                loss = (
-                    30 * F.l1_loss(pos, denoise_target[..., :3], reduction='mean')
-                    + 10 * F.l1_loss(rot, denoise_target[..., 3:], reduction='mean')
-                    + F.binary_cross_entropy_with_logits(openess, gt_openess)
-                )
+                if self._action_space == 'joint':
+                    joints = layer_pred[..., :-1]
+                    loss = (
+                        20 * F.l1_loss(joints, denoise_target)
+                        + F.binary_cross_entropy_with_logits(openess, gt_openess)
+                    )
+                else:
+                    pos = layer_pred[..., :3]
+                    rot = layer_pred[..., 3:-1]
+                    loss = (
+                        30 * F.l1_loss(pos, denoise_target[..., :3], reduction='mean')
+                        + 10 * F.l1_loss(rot, denoise_target[..., 3:], reduction='mean')
+                        + F.binary_cross_entropy_with_logits(openess, gt_openess)
+                    )
                 total_loss = total_loss + loss
         return total_loss / self._lv2_batch_size
 
@@ -265,6 +316,9 @@ class DenoiseActor(nn.Module):
         return out
 
     def convert_rot(self, signal):
+        # Joint-space: no rotation to convert
+        if self._action_space == 'joint':
+            return signal
         # If Euler then no conversion
         if self._rotation_format == 'euler':
             return signal
@@ -291,6 +345,9 @@ class DenoiseActor(nn.Module):
         return signal
 
     def unconvert_rot(self, signal):
+        # Joint-space: no rotation to unconvert
+        if self._action_space == 'joint':
+            return signal
         # If Euler then no conversion
         if self._rotation_format == 'euler':
             return signal
@@ -366,8 +423,10 @@ class TransformerHead(nn.Module):
                  num_shared_attn_layers=4,
                  nhist=3,
                  rotary_pe=True,
+                 pos_dim=3,
                  rot_dim=6):
         super().__init__()
+        self._rot_dim = rot_dim
 
         # Different embeddings
         self.time_emb = nn.Sequential(
@@ -424,26 +483,27 @@ class TransformerHead(nn.Module):
         )
 
         # Specific (non-shared) Output layers:
-        # 1. Rotation
-        self.rotation_proj = nn.Linear(embedding_dim, embedding_dim)
-        self.rotation_self_attn = AttentionModule(
-            num_layers=2,
-            d_model=embedding_dim,
-            dim_fw=embedding_dim,
-            dropout=0.1,
-            n_heads=num_attn_heads,
-            pre_norm=False,
-            rotary_pe=rotary_pe,
-            use_adaln=True,
-            is_self=True
-        )
-        self.rotation_predictor = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim),
-            nn.ReLU(),
-            nn.Linear(embedding_dim, rot_dim)
-        )
+        # 1. Rotation (skip for joint-space where rot_dim=0)
+        if rot_dim > 0:
+            self.rotation_proj = nn.Linear(embedding_dim, embedding_dim)
+            self.rotation_self_attn = AttentionModule(
+                num_layers=2,
+                d_model=embedding_dim,
+                dim_fw=embedding_dim,
+                dropout=0.1,
+                n_heads=num_attn_heads,
+                pre_norm=False,
+                rotary_pe=rotary_pe,
+                use_adaln=True,
+                is_self=True
+            )
+            self.rotation_predictor = nn.Sequential(
+                nn.Linear(embedding_dim, embedding_dim),
+                nn.ReLU(),
+                nn.Linear(embedding_dim, rot_dim)
+            )
 
-        # 2. Position
+        # 2. Position (also serves as joint predictor when rot_dim=0)
         self.position_proj = nn.Linear(embedding_dim, embedding_dim)
         self.position_self_attn = AttentionModule(
             num_layers=2,
@@ -459,7 +519,7 @@ class TransformerHead(nn.Module):
         self.position_predictor = nn.Sequential(
             nn.Linear(embedding_dim, embedding_dim),
             nn.ReLU(),
-            nn.Linear(embedding_dim, 3)
+            nn.Linear(embedding_dim, pos_dim)
         )
 
         # 3. Openess
@@ -548,12 +608,13 @@ class TransformerHead(nn.Module):
             ada_sgnl=time_embs
         )[-1]
 
-        # Rotation head
-        rotation = self.predict_rot(
-            features, rel_pos, time_embs, traj_feats.shape[1]
-        )
+        # Rotation head (skip for joint-space)
+        if self._rot_dim > 0:
+            rotation = self.predict_rot(
+                features, rel_pos, time_embs, traj_feats.shape[1]
+            )
 
-        # Position head
+        # Position head (also serves as joint predictor)
         position, position_features = self.predict_pos(
             features, rel_pos, time_embs, traj_feats.shape[1]
         )
@@ -561,10 +622,11 @@ class TransformerHead(nn.Module):
         # Openess head from position head
         openess = self.openess_predictor(position_features)
 
-        return [
-            torch.cat((position, rotation, openess), -1)
-                 .unflatten(1, (traj_len, nhand))
-        ]
+        if self._rot_dim > 0:
+            out = torch.cat((position, rotation, openess), -1)
+        else:
+            out = torch.cat((position, openess), -1)
+        return [out.unflatten(1, (traj_len, nhand))]
 
     def encode_denoising_timestep(self, timestep, proprio_feats):
         """

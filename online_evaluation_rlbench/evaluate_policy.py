@@ -50,7 +50,8 @@ def parse_arguments():
         ('relative_action', str2bool, False),
         ('rotation_format', str, 'quat_xyzw'),
         ('denoise_timesteps', int, 10),
-        ('denoise_model', str, "rectified_flow")
+        ('denoise_model', str, "rectified_flow"),
+        ('action_space', str, 'eef')
     ]
     for arg in arguments:
         parser.add_argument(f'--{arg[0]}', type=arg[1], default=arg[2])
@@ -74,7 +75,8 @@ def load_models(args):
         relative=args.relative_action,
         rotation_format=args.rotation_format,
         denoise_timesteps=args.denoise_timesteps,
-        denoise_model=args.denoise_model
+        denoise_model=args.denoise_model,
+        action_space=args.action_space
     )
 
     # Load model weights
@@ -135,7 +137,8 @@ if __name__ == "__main__":
             headless=bool(args.headless),
             apply_cameras=dataset_class.cameras,
             collision_checking=bool(args.collision_checking),
-            trajectory_save_dir=args.trajectory_save_dir
+            trajectory_save_dir=args.trajectory_save_dir,
+            action_space=args.action_space
         )
 
         # Actioner (runs the policy online)

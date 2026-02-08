@@ -1,6 +1,6 @@
 main_dir=Peract2
 
-DATA_PATH=/scratch2/cross-emb/3DFA/dense
+DATA_PATH=/home/varun-edachali/Research/RRC/policy/3d_flowmatch_actor/bimanual_push_box
 
 train_data_dir=$DATA_PATH/Peract2_zarr_dense/train.zarr
 eval_data_dir=$DATA_PATH/Peract2_zarr_dense/val.zarr
@@ -35,6 +35,8 @@ bimanual=true
 keypose_only=true
 pre_tokenize=true
 workspace_normalizer_buffer=0.05
+
+action_space=joint # 'eef' or 'joint'
 
 backbone=clip
 finetune_backbone=false
@@ -100,4 +102,5 @@ torchrun --nproc_per_node $ngpus --master_port $RANDOM \
   --relative_action $relative_action \
   --rotation_format $rotation_format \
   --denoise_timesteps $denoise_timesteps \
-  --denoise_model $denoise_model
+  --denoise_model $denoise_model \
+  --action_space $action_space

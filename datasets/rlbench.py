@@ -42,7 +42,8 @@ class RLBenchDataset(BaseDataset):
         relative_action=False,
         mem_limit=8,
         actions_only=False,
-        chunk_size=4
+        chunk_size=4,
+        action_space='eef'
     ):
         super().__init__(
             root=root,
@@ -51,7 +52,8 @@ class RLBenchDataset(BaseDataset):
             relative_action=relative_action,
             mem_limit=mem_limit,
             actions_only=actions_only,
-            chunk_size=chunk_size
+            chunk_size=chunk_size,
+            action_space=action_space
         )
 
     def _get_task(self, idx):

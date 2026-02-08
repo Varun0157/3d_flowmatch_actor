@@ -68,7 +68,8 @@ def parse_arguments():
         ('relative_action', str2bool, False),
         ('rotation_format', str, 'quat_xyzw'),
         ('denoise_timesteps', int, 10),
-        ('denoise_model', str, "rectified_flow")
+        ('denoise_model', str, "rectified_flow"),
+        ('action_space', str, 'eef')  # 'eef' or 'joint'
     ]
     for arg in arguments:
         parser.add_argument(f'--{arg[0]}', type=arg[1], default=arg[2])

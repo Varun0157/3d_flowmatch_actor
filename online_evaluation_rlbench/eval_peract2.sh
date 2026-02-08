@@ -26,6 +26,8 @@ model_type=denoise3d
 bimanual=true
 prediction_len=1
 
+action_space=joint  # 'eef' or 'joint'
+
 backbone=clip
 fps_subsampling_factor=4
 
@@ -68,6 +70,7 @@ for ((i = 0; i < $num_ckpts; i++)); do
     --rotation_format $rotation_format \
     --denoise_timesteps $denoise_timesteps \
     --denoise_model $denoise_model \
+    --action_space $action_space \
     ${trajectory_save_dir:+--trajectory_save_dir $trajectory_save_dir}
 done
 
