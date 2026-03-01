@@ -1,15 +1,15 @@
 main_dir=Peract2
 
-DATA_PATH=/scratch2/cross-emb/3DFA/dense
+DATA_PATH=/scratch2/cross-emb/3DFA/data/peract2_dense_raw  # created by peract2_to_zarr_dense.py
 
-train_data_dir=$DATA_PATH/Peract2_zarr_dense/train.zarr
-eval_data_dir=$DATA_PATH/Peract2_zarr_dense/val.zarr
+train_data_dir=$DATA_PATH/train.zarr
+eval_data_dir=$DATA_PATH/val.zarr
 train_instructions=instructions/peract2/instructions.json
 val_instructions=instructions/peract2/instructions.json
 
 dataset=Peract2_3dfront_3dwrist
 num_workers=4
-B=16 # we used 64 but you can use as low as 16 without much performance drop - it's much faster
+B=64
 B_val=16
 chunk_size=1
 memory_limit=8 # this means 8GB CPU RAM per worker per GPU,
@@ -52,7 +52,7 @@ rotation_format=quat_xyzw
 denoise_timesteps=5
 denoise_model=rectified_flow
 
-run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-keypose_only$keypose_only-$denoise_model-pushbox
+run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-$denoise_model-eef-dense-pushbox
 checkpoint=train_logs/${main_dir}/${run_log_dir}/last.pth
 
 ngpus=1 # we used 4
