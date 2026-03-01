@@ -18,7 +18,7 @@ trajectory_save_dir=eval_logs/$exp/$checkpoint_alias/seed$seed/trajectories
 
 # Dataset arguments
 data_dir=bimanual_push_box/peract2_test/
-dataset=Peract2_3dfront_3dwrist
+dataset=Peract2_3dfront
 image_size=256,256
 
 # Model arguments

@@ -7,7 +7,7 @@ eval_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/val.zarr
 train_instructions=instructions/peract2/instructions.json
 val_instructions=instructions/peract2/instructions.json
 
-dataset=Peract2_3dfront_3dwrist
+dataset=Peract2_3dfront  # front camera only (no wrist)
 num_workers=4
 B=16 # we used 64 but you can use as low as 16 without much performance drop - it's much faster
 B_val=16
@@ -54,7 +54,7 @@ rotation_format=quat_xyzw
 denoise_timesteps=5
 denoise_model=rectified_flow
 
-run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-keypose_only$keypose_only-$denoise_model-pushbox
+run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-$denoise_model-$action_space-sparse-pushbox
 checkpoint=train_logs/${main_dir}/${run_log_dir}/last.pth
 
 ngpus=1 # we used 4
