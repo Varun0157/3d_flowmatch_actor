@@ -212,18 +212,7 @@ def all_tasks_main(split, tasks, root, store_path, max_steps):
 if __name__ == "__main__":
     tasks = [
         'bimanual_push_box',
-        'bimanual_lift_ball',
-        'bimanual_dual_push_buttons',
         'bimanual_pick_plate',
-        'bimanual_put_item_in_drawer',
-        'bimanual_put_bottle_in_fridge',
-        'bimanual_handover_item',
-        'bimanual_pick_laptop',
-        'bimanual_straighten_rope',
-        'bimanual_sweep_to_dustpan',
-        'bimanual_lift_tray',
-        'bimanual_handover_item_easy',
-        'bimanual_take_tray_out_of_oven'
     ]
     args = parse_arguments()
     os.makedirs(args.tgt, exist_ok=True)
