@@ -4,8 +4,8 @@ tasks=(
 )
 
 # Testing arguments
-checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow-pushbox/best.pth
-checkpoint_alias=denoise3d-Peract2_3dfront_3dwrist-C120-B16-lr1e-4-constant-H3-rectified_flow-pushbox
+checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront-C120-B16-lr1e-4-constant-H3-rectified_flow-joint-sparse-pushbox/best.pth
+checkpoint_alias=denoise3d-Peract2_3dfront-C120-B16-lr1e-4-constant-H3-rectified_flow-joint-sparse-pushbox
 
 max_tries=2
 max_steps=25
