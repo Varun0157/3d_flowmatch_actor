@@ -1,6 +1,6 @@
 main_dir=Peract2
 
-DATA_PATH=/scratch2/cross-emb/3DFA/data/peract2_dense_raw  # created by peract2_to_zarr_dense.py
+DATA_PATH=/scratch2/cross-emb/3DFA/data/peract2_dense
 
 train_data_dir=$DATA_PATH/train.zarr
 eval_data_dir=$DATA_PATH/val.zarr
