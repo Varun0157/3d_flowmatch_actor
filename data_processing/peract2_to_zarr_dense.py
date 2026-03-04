@@ -6,7 +6,8 @@ episode segment [keypose_i → keypose_{i+1}], all simulation frames in that
 interval are subsampled to exactly max_steps frames. No interpolation is used —
 frames are actual recorded simulator states.
 
-Resulting action_joints shape: (N, max_steps, 2, 8)
+Resulting action shape: (N, max_steps, 2, 8) — dense EEF trajectories
+Resulting action_joints shape: (N, 1, 2, 8) — keypose joint targets
 Observations (rgb/depth/proprio) are still taken at the start of each segment
 (the keypose the arm is at when the segment begins).
 
@@ -90,8 +91,8 @@ def all_tasks_main(split, tasks, root, store_path, max_steps):
         _create("rgb", (NCAM, 3, IM_SIZE, IM_SIZE), "uint8")
         _create("depth", (NCAM, IM_SIZE, IM_SIZE), "float16")
         _create("proprioception", (3, NHAND, 8), "float32")
-        _create("action", (1, NHAND, 8), "float32")                   # keypose EEF goal
-        _create("action_joints", (max_steps, NHAND, 8), "float32")    # dense joint traj
+        _create("action", (max_steps, NHAND, 8), "float32")            # dense EEF traj
+        _create("action_joints", (1, NHAND, 8), "float32")             # keypose joint target
         _create("proprioception_joints", (1, NHAND, 8), "float32")
         _create("extrinsics", (NCAM, 4, 4), "float16")
         _create("intrinsics", (NCAM, 3, 3), "float16")
@@ -151,8 +152,21 @@ def all_tasks_main(split, tasks, root, store_path, max_steps):
                 prop_2 = np.concatenate([prop_1[:1], prop_1[:-1]])
                 prop = np.concatenate([prop_2, prop_1, prop], 1).reshape(n_segments, 3, NHAND, 8)
 
-                # Keypose EEF actions (goal poses, for reference)
-                actions_eef = eef_states[1:].reshape(n_segments, 1, NHAND, 8)
+                # Dense EEF trajectories — actual gripper poses at each simulator frame
+                dense_eef_trajs = []
+                for seg_i in range(n_segments):
+                    start_f, end_f = key_frames[seg_i], key_frames[seg_i + 1]
+                    segment = list(range(start_f + 1, end_f + 1)) or [end_f]
+                    segment = subsample_to_length(segment, max_steps)
+                    traj = np.array([
+                        [
+                            np.concatenate([demo[f].left.gripper_pose,  [demo[f].left.gripper_open]]),
+                            np.concatenate([demo[f].right.gripper_pose, [demo[f].right.gripper_open]])
+                        ]
+                        for f in segment
+                    ], dtype=np.float32)  # (max_steps, 2, 8)
+                    dense_eef_trajs.append(traj)
+                actions_eef = np.stack(dense_eef_trajs)  # (n_segments, max_steps, 2, 8)
 
                 # Joint state at segment starts
                 jnt_states = np.stack([np.concatenate([
@@ -161,22 +175,8 @@ def all_tasks_main(split, tasks, root, store_path, max_steps):
                 ]) for k in key_frames]).astype(np.float32)
                 prop_jnts = jnt_states[:-1].reshape(n_segments, 1, NHAND, 8)
 
-                # Dense joint trajectories — actual simulator frames, no interpolation
-                dense_trajs = []
-                for seg_i in range(n_segments):
-                    start_f, end_f = key_frames[seg_i], key_frames[seg_i + 1]
-                    # Frames from start+1 through end (the arm's motion to next keypose)
-                    segment = list(range(start_f + 1, end_f + 1)) or [end_f]
-                    segment = subsample_to_length(segment, max_steps)
-                    traj = np.array([
-                        [
-                            np.concatenate([demo[f].left.joint_positions,  [demo[f].left.gripper_open]]),
-                            np.concatenate([demo[f].right.joint_positions, [demo[f].right.gripper_open]])
-                        ]
-                        for f in segment
-                    ], dtype=np.float32)  # (max_steps, 2, 8)
-                    dense_trajs.append(traj)
-                dense_trajs = np.stack(dense_trajs)  # (n_segments, max_steps, 2, 8)
+                # Keypose joint targets (goal joint angles at the end of each segment)
+                actions_jnts = jnt_states[1:].reshape(n_segments, 1, NHAND, 8)
 
                 extrinsics = np.stack([
                     np.stack([demo[k].misc[f'{cam}_camera_extrinsics'].astype(np.float16) for cam in cameras])
@@ -195,7 +195,7 @@ def all_tasks_main(split, tasks, root, store_path, max_steps):
                 zarr_file['depth'].append(depth)
                 zarr_file['proprioception'].append(prop)
                 zarr_file['action'].append(actions_eef)
-                zarr_file['action_joints'].append(dense_trajs)
+                zarr_file['action_joints'].append(actions_jnts)
                 zarr_file['proprioception_joints'].append(prop_jnts)
                 zarr_file['extrinsics'].append(extrinsics)
                 zarr_file['intrinsics'].append(intrinsics)
