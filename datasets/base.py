@@ -34,6 +34,7 @@ class BaseDataset(Dataset):
         for key in self.annos:
             assert len(self.annos[key]) == len_, f'length mismatch in {key}'
         print(f"Found {len(self.annos['action'])} samples")
+        print(f"Action shape: {self.annos['action'].shape}")
 
     def _load_instructions(self, instruction_file):
         return json.load(open(instruction_file))
