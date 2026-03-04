@@ -212,7 +212,6 @@ def all_tasks_main(split, tasks, root, store_path, max_steps):
 if __name__ == "__main__":
     tasks = [
         'bimanual_push_box',
-        'bimanual_pick_plate',
     ]
     args = parse_arguments()
     os.makedirs(args.tgt, exist_ok=True)
