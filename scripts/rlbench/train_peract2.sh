@@ -1,9 +1,9 @@
 main_dir=Peract2
 
-DATA_PATH=/scratch2/cross-emb/3DFA/data/
+DATA_PATH=/scratch2/cross-emb/3DFA/data/peract2_dense_joints
 
-train_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/train.zarr
-eval_data_dir=$DATA_PATH/bimanual_push_box/Peract2_zarr/val.zarr
+train_data_dir=$DATA_PATH/train.zarr
+eval_data_dir=$DATA_PATH/val.zarr
 train_instructions=instructions/peract2/instructions.json
 val_instructions=instructions/peract2/instructions.json
 
@@ -32,7 +32,7 @@ lv2_batch_size=1 # you can increase this and divide B equally, speed/accuracy tr
 # Model arguments, change (some of) these for new architectures
 model_type=denoise3d
 bimanual=true
-keypose_only=true
+keypose_only=false
 pre_tokenize=true
 workspace_normalizer_buffer=0.05
 
@@ -54,7 +54,7 @@ rotation_format=quat_xyzw
 denoise_timesteps=5
 denoise_model=rectified_flow
 
-run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-$denoise_model-$action_space-sparse-pushbox
+run_log_dir=$model_type-$dataset-C$C-B$B-lr$lr-$lr_scheduler-H$num_history-$denoise_model-$action_space-dense-pushbox
 checkpoint=train_logs/${main_dir}/${run_log_dir}/last.pth
 
 ngpus=1 # we used 4

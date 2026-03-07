@@ -4,8 +4,8 @@ tasks=(
 )
 
 # Testing arguments
-checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront-C120-B16-lr1e-4-constant-H3-rectified_flow-joint-sparse-pushbox/best.pth
-checkpoint_alias=denoise3d-Peract2_3dfront-C120-B16-lr1e-4-constant-H3-rectified_flow-joint-sparse-pushbox
+checkpoint=train_logs/Peract2/denoise3d-Peract2_3dfront-C120-B16-lr1e-4-constant-H3-rectified_flow-joint-dense-pushbox/best.pth
+checkpoint_alias=denoise3d-Peract2_3dfront-C120-B16-lr1e-4-constant-H3-rectified_flow-joint-dense-pushbox
 
 max_tries=2
 max_steps=25
@@ -24,7 +24,7 @@ image_size=256,256
 # Model arguments
 model_type=denoise3d
 bimanual=true
-prediction_len=1
+prediction_len=15
 
 action_space=joint  # 'eef' or 'joint'
 
